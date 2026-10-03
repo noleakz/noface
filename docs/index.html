@@ -71,7 +71,7 @@
             <p class="help">NOFACE cherche les visages automatiquement. Il peut en oublier : vérifiez toujours le résultat.</p>
           </div>
           <div class="control-block">
-            <label class="toggle-field" for="fast-mode"><input id="fast-mode" type="checkbox"><span>Mode rapide pour les vidéos</span></label>
+            <label class="toggle-field" for="fast-mode"><input id="fast-mode" type="checkbox" disabled><span>Mode rapide pour les vidéos</span></label>
             <p class="help">Activé automatiquement sur téléphone. La vidéo créée est plus petite, et NOFACE vérifie moins d’images. Il essaie de couvrir le trajet entre deux positions repérées. Un petit visage ou un visage visible très brièvement peut être oublié : désactivez ce mode si vous avez un doute.</p>
           </div>
           <div class="control-block">
@@ -105,6 +105,6 @@
     </main>
   </div>
   <video id="source-video" playsinline preload="auto" hidden></video>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=fast-mode-2"></script>
 </body>
 </html>

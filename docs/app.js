@@ -2,6 +2,7 @@ import { FaceMemory } from './face-memory.mjs';
 import { CenterFaceDetector } from './centerface.mjs';
 import { coverageAt, scaleBox, scanChecks, videoOutputSize, videoScanPlan } from './video-coverage.mjs';
 import { detectWithFallback } from './video-detection.mjs';
+import { defaultFastMode } from './video-mode.mjs';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -18,7 +19,14 @@ const ui = {
 const ctx = ui.canvas.getContext('2d', { willReadFrequently: false });
 const sourceCanvas = document.createElement('canvas');
 const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: false });
-ui.fastMode.checked = window.matchMedia?.('(pointer: coarse) and (max-width: 1024px)')?.matches ?? false;
+ui.fastMode.checked = defaultFastMode({
+  viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+  screenWidth: window.screen?.width ?? window.innerWidth,
+  screenHeight: window.screen?.height ?? window.innerHeight,
+  touchPoints: navigator.maxTouchPoints ?? 0,
+  coarsePointer: window.matchMedia?.('(any-pointer: coarse)')?.matches ?? false
+});
+let fastModeChoice = ui.fastMode.checked;
 let detectorPromise;
 const faceMemory = new FaceMemory();
 const centerFace = new CenterFaceDetector();
@@ -45,6 +53,9 @@ let audioIncluded = false;
 let coveredErrorFrames = 0;
 
 function setStatus(message) { ui.status.textContent = message; }
+function updateVideoModeLabel() {
+  if (mediaKind === 'video') ui.kind.textContent = ui.fastMode.checked ? 'VIDÉO · MODE RAPIDE' : 'VIDÉO · MODE MINUTIEUX';
+}
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
   return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
@@ -115,11 +126,13 @@ async function chooseFile(nextFile) {
   if (!nextFile || exporting) return;
   const kind = nextFile.type.startsWith('image/') ? 'image' : nextFile.type.startsWith('video/') ? 'video' : null;
   if (!kind) { setStatus('Choisissez une photo ou une vidéo.'); return; }
+  ui.fastMode.checked = fastModeChoice;
   resetMedia();
   file = nextFile;
   mediaKind = kind;
   ui.name.textContent = nextFile.name;
   ui.kind.textContent = kind === 'image' ? 'PHOTO' : 'VIDÉO';
+  updateVideoModeLabel();
   ui.drop.hidden = true;
   ui.canvasWrap.hidden = false;
   setStatus('Ouverture du fichier…');
@@ -334,7 +347,9 @@ ui.maskColor.addEventListener('input', async () => {
   renderCurrent();
 });
 ui.fastMode.addEventListener('change', async () => {
+  fastModeChoice = ui.fastMode.checked;
   if (mediaKind === 'video') {
+    updateVideoModeLabel();
     setVideoCanvasSize();
     await enterVideoEditor(true);
   }
@@ -378,8 +393,8 @@ async function exportPhoto() {
   downloadBlob(blob, `${file.name.replace(/\.[^.]+$/, '')}-anonymise.png`);
   setStatus('Photo téléchargée. Ouvrez-la en grand avant de la partager.');
 }
-async function analyzeVideo() {
-  const plan = videoScanPlan(ui.video.duration, ui.fastMode.checked ? 'fast' : 'careful');
+async function analyzeVideo(fast) {
+  const plan = videoScanPlan(ui.video.duration, fast ? 'fast' : 'careful');
   const checks = scanChecks(plan);
   videoAnalysis = [];
   analysisComplete = false;
@@ -414,7 +429,7 @@ async function analyzeVideo() {
     const percent = Math.round(completedChecks / totalChecks * 70);
     ui.progressBar.style.width = `${percent}%`;
     ui.progressText.textContent = `${percent}%`;
-    setStatus(`Recherche des visages : ${completedChecks} sur ${totalChecks}…`);
+    setStatus(`${fast ? 'Mode rapide' : 'Mode minutieux'} · Recherche des visages : ${completedChecks} sur ${totalChecks}…`);
   };
   for (let index = 0; index < checks.length; index++) {
     const { time, maxSide, detail } = checks[index];
@@ -436,10 +451,9 @@ async function analyzeVideo() {
   await seekSource(0);
 }
 
-async function recordProcessedVideo() {
+async function recordProcessedVideo(fast) {
   if (!ui.canvas.captureStream || !window.MediaRecorder)
     throw new Error('Ce navigateur ne peut pas créer la vidéo.');
-  const fast = ui.fastMode.checked;
   const outputFps = fast ? 24 : 30;
   const mime = (fast ? [
     'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4',
@@ -547,6 +561,10 @@ async function recordProcessedVideo() {
 
 async function processVideo() {
   if (mediaKind !== 'video' || exporting || !centerFace.session) return;
+  const fast = fastModeChoice;
+  ui.fastMode.checked = fast;
+  setVideoCanvasSize();
+  updateVideoModeLabel();
   exporting = true;
   ui.download.disabled = true;
   ui.processVideo.disabled = true;
@@ -564,11 +582,11 @@ async function processVideo() {
   ui.timeline.hidden = true;
   paintCover({ x: 0, y: 0, width: ui.canvas.width, height: ui.canvas.height });
   try {
-    if (!analysisComplete) await analyzeVideo();
+    if (!analysisComplete) await analyzeVideo(fast);
     ui.progressBar.style.width = '70%';
     ui.progressText.textContent = '70%';
     setStatus('Création du fichier vidéo…');
-    const { blob, mime } = await recordProcessedVideo();
+    const { blob, mime } = await recordProcessedVideo(fast);
     processedVideoBlob = blob;
     processedMime = mime;
     processedVideoUrl = URL.createObjectURL(blob);
@@ -582,7 +600,7 @@ async function processVideo() {
     ui.progressText.textContent = '100%';
     const sound = audioIncluded ? 'avec le son' : 'sans le son';
     const covered = coveredErrorFrames ? ` ${coveredErrorFrames} image(s) entièrement couverte(s) après un problème pendant le traitement.` : '';
-    setStatus(`Vidéo prête ${sound}. Regardez-la entièrement avant de la partager.${covered}`);
+    setStatus(`Vidéo prête ${sound} (${fast ? 'mode rapide' : 'mode minutieux'}). Regardez-la entièrement avant de la partager.${covered}`);
   } catch (error) {
     console.error(error);
     ui.processVideo.hidden = false;
@@ -620,4 +638,5 @@ ui.download.addEventListener('click', async () => {
   }
 });
 
+ui.fastMode.disabled = false;
 loadDetector().catch(() => {});
