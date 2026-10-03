@@ -29,7 +29,8 @@ const compactDevice = defaultFastMode({
 });
 ui.fastMode.checked = compactDevice;
 let fastModeChoice = ui.fastMode.checked;
-let fastPhotoChoice = false;
+ui.fastPhoto.checked = compactDevice;
+let fastPhotoChoice = ui.fastPhoto.checked;
 let detectorPromise;
 const faceMemory = new FaceMemory();
 const centerFace = new CenterFaceDetector();
