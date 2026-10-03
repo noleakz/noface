@@ -2,12 +2,19 @@
 // (MIT): https://github.com/Star-Clouds/CenterFace/blob/master/prj-python/centerface.py
 import { loadModelBytes } from './model-cache.mjs';
 
-const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+const ORT_BASE = new URL('./vendor/onnxruntime-web/', import.meta.url).href;
 // The upstream ONNX file declares a fixed 10x3x32x32 input. This copy changes
 // only the declared input shape so ONNX Runtime can accept real image sizes.
-const MODEL_URL = 'https://huggingface.co/SCKEMPER/centerface-dynamic/resolve/main/centerface-dynamic.onnx';
+const MODEL_URL = new URL('./vendor/centerface-dynamic.onnx', import.meta.url).href;
 
 const nextMultipleOf32 = (value) => Math.ceil(value / 32) * 32;
+
+export function sourceDimensions(source) {
+  const width = source.videoWidth || source.width;
+  const height = source.videoHeight || source.height;
+  if (!width || !height) throw new Error('Image source illisible.');
+  return { width, height };
+}
 
 export function rgbPlanesFromRgba(rgba) {
   const plane = rgba.length / 4;
@@ -86,7 +93,7 @@ export class CenterFaceDetector {
   async load() {
     if (!this.loadPromise) {
       this.loadPromise = (async () => {
-        const ort = await import(`${ORT_BASE}ort.min.mjs`);
+        const ort = await import(`${ORT_BASE}ort.wasm.min.mjs`);
         ort.env.wasm.wasmPaths = ORT_BASE;
         ort.env.wasm.numThreads = 1;
         const modelBytes = await loadModelBytes(MODEL_URL);
@@ -105,13 +112,12 @@ export class CenterFaceDetector {
 
   async detect(source, maxSide = 960) {
     await this.load();
-    const sourceWidth = source.width;
-    const sourceHeight = source.height;
+    const { width: sourceWidth, height: sourceHeight } = sourceDimensions(source);
     const ratio = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
     const inputWidth = nextMultipleOf32(Math.max(32, Math.round(sourceWidth * ratio)));
     const inputHeight = nextMultipleOf32(Math.max(32, Math.round(sourceHeight * ratio)));
-    this.canvas.width = inputWidth;
-    this.canvas.height = inputHeight;
+    if (this.canvas.width !== inputWidth) this.canvas.width = inputWidth;
+    if (this.canvas.height !== inputHeight) this.canvas.height = inputHeight;
     this.context.drawImage(source, 0, 0, inputWidth, inputHeight);
     const rgba = this.context.getImageData(0, 0, inputWidth, inputHeight).data;
     const pixels = rgbPlanesFromRgba(rgba);

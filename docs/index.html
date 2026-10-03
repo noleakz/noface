@@ -27,10 +27,10 @@
         <div class="privacy-stamp">SUR VOTRE APPAREIL</div>
         <div>
           <h2>Vos photos et vidéos restent ici.</h2>
-          <p>NOFACE les traite sur votre appareil. Le code de l’application ne les envoie à personne. Pour fonctionner, elle télécharge des outils depuis d’autres sites. Le résultat reste dans cette page jusqu’à ce que vous changiez de fichier ou fermiez la page.</p>
+          <p>NOFACE les traite sur votre appareil. Vos fichiers ne sont envoyés nulle part. Le programme et ce dont il a besoin pour reconnaître les visages viennent du même site que cette page. Le résultat reste ici jusqu’à ce que vous changiez de fichier ou fermiez la page.</p>
           <details class="network-detail">
-            <summary>Quels autres sites sont contactés ?</summary>
-            <p>Au chargement, NOFACE reçoit une partie de son programme depuis jsDelivr et le fichier qui l’aide à reconnaître les visages depuis Hugging Face. Ces sites savent que vous avez téléchargé ces outils, mais le code de NOFACE ne leur envoie pas vos photos ou vidéos. Votre navigateur peut garder ces outils pour la prochaine fois. Comme une partie du programme vient d’un autre site, il faut aussi lui faire confiance.</p>
+            <summary>Est-ce qu’un autre site est contacté ?</summary>
+            <p>Non. Votre navigateur charge la page et les fichiers nécessaires depuis NOFACE. Il peut les garder sur votre appareil pour la prochaine fois. Seul le lien « Voir le code » ouvre GitHub si vous cliquez dessus.</p>
           </details>
         </div>
       </section>
@@ -69,6 +69,10 @@
           <div class="control-block">
             <span class="field-label">Recherche des visages</span>
             <p class="help">NOFACE cherche les visages automatiquement. Il peut en oublier : vérifiez toujours le résultat.</p>
+          </div>
+          <div class="control-block">
+            <label class="toggle-field" for="fast-mode"><input id="fast-mode" type="checkbox"><span>Mode rapide pour les vidéos</span></label>
+            <p class="help">Activé automatiquement sur téléphone. La vidéo créée est plus petite, et NOFACE vérifie moins d’images. Il essaie de couvrir le trajet entre deux positions repérées. Un petit visage ou un visage visible très brièvement peut être oublié : désactivez ce mode si vous avez un doute.</p>
           </div>
           <div class="control-block">
             <label class="field-label" for="mask-color">Couleur des rectangles</label>

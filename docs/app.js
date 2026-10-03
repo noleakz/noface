@@ -1,6 +1,7 @@
 import { FaceMemory } from './face-memory.mjs';
 import { CenterFaceDetector } from './centerface.mjs';
-import { analysisTimes, coverageAt } from './video-coverage.mjs';
+import { coverageAt, scaleBox, scanChecks, videoOutputSize, videoScanPlan } from './video-coverage.mjs';
+import { detectWithFallback } from './video-detection.mjs';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -8,7 +9,7 @@ const ui = {
   overlay: $('draw-overlay'), video: $('source-video'), resultVideo: $('result-video'), timeline: $('timeline'), seek: $('seek'),
   time: $('time-display'), status: $('status'), progress: $('progress-track'),
   progressBar: $('progress-bar'), progressText: $('progress-text'), name: $('file-name'),
-  kind: $('file-kind'), maskColor: $('mask-color'), maskColorValue: $('mask-color-value'),
+  kind: $('file-kind'), fastMode: $('fast-mode'), maskColor: $('mask-color'), maskColorValue: $('mask-color-value'),
   padding: $('padding'), paddingValue: $('padding-value'),
   maskList: $('mask-list'), maskCount: $('mask-count'), download: $('download'),
   processVideo: $('process-video'), editVideo: $('edit-video')
@@ -17,10 +18,10 @@ const ui = {
 const ctx = ui.canvas.getContext('2d', { willReadFrequently: false });
 const sourceCanvas = document.createElement('canvas');
 const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: false });
+ui.fastMode.checked = window.matchMedia?.('(pointer: coarse) and (max-width: 1024px)')?.matches ?? false;
 let detectorPromise;
 const faceMemory = new FaceMemory();
 const centerFace = new CenterFaceDetector();
-const VIDEO_ANALYSIS_FPS = 30;
 let file;
 let fileUrl;
 let image;
@@ -133,7 +134,7 @@ async function chooseFile(nextFile) {
         ui.video.onloadedmetadata = resolve;
         ui.video.onerror = () => reject(new Error('Ce navigateur ne peut pas ouvrir cette vidéo. Essayez un fichier MP4 ou WebM.'));
       });
-      setCanvasSize(ui.video.videoWidth, ui.video.videoHeight);
+      setVideoCanvasSize();
       updateTime();
       await seekSource(0.001);
     }
@@ -155,6 +156,12 @@ function setCanvasSize(width, height) {
   if (!width || !height) throw new Error('Ce fichier ne contient aucune image lisible.');
   ui.canvas.width = sourceCanvas.width = width;
   ui.canvas.height = sourceCanvas.height = height;
+}
+function setVideoCanvasSize() {
+  const size = videoOutputSize(ui.video.videoWidth, ui.video.videoHeight, ui.fastMode.checked);
+  setCanvasSize(size.width, size.height);
+  sourceCanvas.width = ui.video.videoWidth;
+  sourceCanvas.height = ui.video.videoHeight;
 }
 async function seekSource(time) {
   await new Promise((resolve, reject) => {
@@ -205,9 +212,11 @@ function paintManualMasks() {
   });
 }
 function paintCachedVideoFrame(time) {
-  sourceCtx.drawImage(ui.video, 0, 0, sourceCanvas.width, sourceCanvas.height);
-  ctx.drawImage(sourceCanvas, 0, 0);
-  for (const box of coverageAt(videoAnalysis, time)) paintCover(paddedBox(box));
+  ctx.drawImage(ui.video, 0, 0, ui.canvas.width, ui.canvas.height);
+  for (const box of coverageAt(videoAnalysis, time)) {
+    const scaled = scaleBox(box, ui.video.videoWidth, ui.video.videoHeight, ui.canvas.width, ui.canvas.height);
+    paintCover(paddedBox(scaled));
+  }
   paintManualMasks();
 }
 async function renderCurrent() {
@@ -324,6 +333,12 @@ ui.maskColor.addEventListener('input', async () => {
   if (renderBusy) await new Promise((resolve) => renderIdleResolvers.push(resolve));
   renderCurrent();
 });
+ui.fastMode.addEventListener('change', async () => {
+  if (mediaKind === 'video') {
+    setVideoCanvasSize();
+    await enterVideoEditor(true);
+  }
+});
 ui.padding.addEventListener('input', async () => {
   ui.paddingValue.textContent = `${ui.padding.value}%`;
   if (mediaKind === 'video') { await enterVideoEditor(); return; }
@@ -364,34 +379,58 @@ async function exportPhoto() {
   setStatus('Photo téléchargée. Ouvrez-la en grand avant de la partager.');
 }
 async function analyzeVideo() {
-  const times = analysisTimes(ui.video.duration, VIDEO_ANALYSIS_FPS);
+  const plan = videoScanPlan(ui.video.duration, ui.fastMode.checked ? 'fast' : 'careful');
+  const checks = scanChecks(plan);
   videoAnalysis = [];
   analysisComplete = false;
   coveredErrorFrames = 0;
   faceMemory.reset();
   let consecutiveErrors = 0;
-  for (let index = 0; index < times.length; index++) {
-    const time = times[index];
+  const detectorState = { smallChecksFailed: false };
+  const detailFrames = [];
+  const scannedByMillisecond = new Map();
+  const totalChecks = checks.length;
+  let completedChecks = 0;
+  const detectAt = async (time, side) => {
     await seekSource(time);
     sourceCtx.drawImage(ui.video, 0, 0, sourceCanvas.width, sourceCanvas.height);
-    let boxes;
     try {
-      const detected = await centerFace.detect(sourceCanvas, 960);
-      boxes = faceMemory.update(detected, time);
+      const boxes = await detectWithFallback(centerFace, sourceCanvas, side, detectorState);
       consecutiveErrors = 0;
+      return boxes;
     } catch (error) {
       console.error(error);
       consecutiveErrors++;
-      if (consecutiveErrors >= 3) throw new Error('La recherche des visages s’est arrêtée. Rechargez la page puis réessayez.');
-      boxes = [{ originX: 0, originY: 0, width: ui.canvas.width, height: ui.canvas.height }];
+      if (consecutiveErrors >= 3) {
+        const detail = String(error?.message || 'erreur inconnue').split('\n')[0].slice(0, 150);
+        throw new Error(`La recherche des visages s’est arrêtée. Détail : ${detail}`);
+      }
       coveredErrorFrames++;
+      return [{ originX: 0, originY: 0, width: ui.video.videoWidth, height: ui.video.videoHeight }];
     }
-    videoAnalysis.push({ time, boxes });
-    const percent = Math.round((index + 1) / times.length * 70);
+  };
+  const reportProgress = () => {
+    completedChecks++;
+    const percent = Math.round(completedChecks / totalChecks * 70);
     ui.progressBar.style.width = `${percent}%`;
     ui.progressText.textContent = `${percent}%`;
-    setStatus(`Recherche des visages : ${index + 1} sur ${times.length}…`);
+    setStatus(`Recherche des visages : ${completedChecks} sur ${totalChecks}…`);
+  };
+  for (let index = 0; index < checks.length; index++) {
+    const { time, maxSide, detail } = checks[index];
+    const frame = { time, boxes: await detectAt(time, maxSide) };
+    const key = Math.round(time * 1000);
+    scannedByMillisecond.set(key, frame);
+    if (detail) detailFrames.push(frame);
+    reportProgress();
     if (index % 3 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  for (const time of plan.times) {
+    const key = Math.round(time * 1000);
+    const nearbyDetail = detailFrames.length ? coverageAt(detailFrames, time, { sweep: false }) : [];
+    const detected = scannedByMillisecond.get(key).boxes;
+    const boxes = faceMemory.update([...detected, ...nearbyDetail], time);
+    videoAnalysis.push({ time, boxes, detections: detected });
   }
   analysisComplete = true;
   await seekSource(0);
@@ -400,13 +439,15 @@ async function analyzeVideo() {
 async function recordProcessedVideo() {
   if (!ui.canvas.captureStream || !window.MediaRecorder)
     throw new Error('Ce navigateur ne peut pas créer la vidéo.');
-  const mime = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4',
-    'video/webm'
-  ].find((type) => MediaRecorder.isTypeSupported(type));
+  const fast = ui.fastMode.checked;
+  const outputFps = fast ? 24 : 30;
+  const mime = (fast ? [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4',
+    'video/webm;codecs=vp8,opus', 'video/webm', 'video/webm;codecs=vp9,opus'
+  ] : [
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus',
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm'
+  ]).find((type) => MediaRecorder.isTypeSupported(type));
   if (!mime) throw new Error('Ce navigateur ne peut pas créer la vidéo.');
 
   await seekSource(0);
@@ -415,7 +456,7 @@ async function recordProcessedVideo() {
   let captureTrack = outputStream.getVideoTracks()[0];
   if (!captureTrack?.requestFrame) {
     outputStream.getTracks().forEach((track) => track.stop());
-    outputStream = ui.canvas.captureStream(30);
+    outputStream = ui.canvas.captureStream(outputFps);
     captureTrack = outputStream.getVideoTracks()[0];
   }
   if (!captureTrack) throw new Error('Impossible de créer la vidéo.');
@@ -438,7 +479,7 @@ async function recordProcessedVideo() {
   }
 
   const chunks = [];
-  recorder = new MediaRecorder(outputStream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
+  recorder = new MediaRecorder(outputStream, { mimeType: mime, videoBitsPerSecond: fast ? 2_500_000 : 5_000_000 });
   const finished = new Promise((resolve, reject) => {
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
     recorder.onerror = () => reject(new Error('L’enregistrement de la vidéo a échoué.'));
@@ -447,6 +488,7 @@ async function recordProcessedVideo() {
   let callbackId;
   let animationId;
   let stopWatching;
+  let nextCaptureTime = 1 / outputFps;
   try {
     recorder.start(1000);
     captureTrack.requestFrame?.();
@@ -464,8 +506,11 @@ async function recordProcessedVideo() {
       const tick = (_now, metadata) => {
         try {
           const time = metadata?.mediaTime ?? video.currentTime;
-          paintCachedVideoFrame(time);
-          captureTrack.requestFrame?.();
+          if (!fast || time + 0.003 >= nextCaptureTime) {
+            paintCachedVideoFrame(time);
+            captureTrack.requestFrame?.();
+            while (nextCaptureTime <= time + 0.003) nextCaptureTime += 1 / outputFps;
+          }
           const percent = Math.min(99, 70 + Math.round(time / video.duration * 29));
           ui.progressBar.style.width = `${percent}%`;
           ui.progressText.textContent = `${percent}%`;
@@ -507,6 +552,7 @@ async function processVideo() {
   ui.processVideo.disabled = true;
   ui.editVideo.disabled = true;
   ui.file.disabled = true;
+  ui.fastMode.disabled = true;
   ui.padding.disabled = true;
   ui.maskColor.disabled = true;
   ui.progress.hidden = false;
@@ -547,6 +593,7 @@ async function processVideo() {
     ui.processVideo.disabled = false;
     ui.editVideo.disabled = false;
     ui.file.disabled = false;
+    ui.fastMode.disabled = false;
     ui.padding.disabled = false;
     ui.maskColor.disabled = false;
   }

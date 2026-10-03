@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeCenterFace, rgbPlanesFromRgba } from '../docs/centerface.mjs';
+import { decodeCenterFace, rgbPlanesFromRgba, sourceDimensions } from '../docs/centerface.mjs';
 
 function tensors(width = 32, height = 32) {
   const plane = width * height / 16;
@@ -40,4 +40,10 @@ test('rejects output tensors with an unexpected shape', () => {
 test('feeds RGB color planes without alpha or normalization', () => {
   const rgba = Uint8ClampedArray.from([10, 20, 30, 255, 40, 50, 60, 0]);
   assert.deepEqual([...rgbPlanesFromRgba(rgba)], [10, 40, 20, 50, 30, 60]);
+});
+
+test('uses video frame dimensions when analyzing a video directly', () => {
+  assert.deepEqual(sourceDimensions({ width: 0, height: 0, videoWidth: 1920, videoHeight: 1080 }), {
+    width: 1920, height: 1080
+  });
 });
