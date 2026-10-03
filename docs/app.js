@@ -3,15 +3,15 @@ import { CenterFaceDetector } from './centerface.mjs?v=photo-worker-1';
 import { coverageAt, scaleBox, scanChecks, videoOutputSize, videoScanPlan } from './video-coverage.mjs';
 import { detectWithFallback } from './video-detection.mjs';
 import { defaultFastMode } from './video-mode.mjs';
-import { photoOutputSize } from './photo-processing.mjs';
+import { photoOutputSize, photoScanMaxSide } from './photo-processing.mjs?v=photo-speed-1';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  file: $('file-input'), drop: $('drop-zone'), canvasWrap: $('canvas-wrap'), canvas: $('canvas'),
+  file: $('file-input'), drop: $('drop-zone'), canvasWrap: $('canvas-wrap'), canvas: $('canvas'), busy: $('busy-overlay'), busyLabel: $('busy-label'), busyElapsed: $('busy-elapsed'),
   overlay: $('draw-overlay'), video: $('source-video'), resultVideo: $('result-video'), timeline: $('timeline'), seek: $('seek'),
   time: $('time-display'), status: $('status'), progress: $('progress-track'),
   progressBar: $('progress-bar'), progressText: $('progress-text'), name: $('file-name'),
-  kind: $('file-kind'), fastMode: $('fast-mode'), maskColor: $('mask-color'), maskColorValue: $('mask-color-value'),
+  kind: $('file-kind'), fastMode: $('fast-mode'), fastPhoto: $('fast-photo'), maskColor: $('mask-color'), maskColorValue: $('mask-color-value'),
   padding: $('padding'), paddingValue: $('padding-value'),
   maskList: $('mask-list'), maskCount: $('mask-count'), download: $('download'),
   processVideo: $('process-video'), editVideo: $('edit-video')
@@ -29,6 +29,7 @@ const compactDevice = defaultFastMode({
 });
 ui.fastMode.checked = compactDevice;
 let fastModeChoice = ui.fastMode.checked;
+let fastPhotoChoice = false;
 let detectorPromise;
 const faceMemory = new FaceMemory();
 const centerFace = new CenterFaceDetector();
@@ -55,8 +56,31 @@ let audioSource;
 let audioDestination;
 let audioIncluded = false;
 let coveredErrorFrames = 0;
+let busyToken = 0;
+let busyTimer;
 
 function setStatus(message) { ui.status.textContent = message; }
+function clearBusy() {
+  clearInterval(busyTimer);
+  ui.busy.hidden = true;
+  ui.canvasWrap.removeAttribute('aria-busy');
+}
+function showBusy(message) {
+  clearInterval(busyTimer);
+  const token = ++busyToken;
+  ui.busyLabel.textContent = message;
+  ui.busyElapsed.textContent = '0 s';
+  ui.busy.hidden = false;
+  ui.canvasWrap.setAttribute('aria-busy', 'true');
+  const started = Date.now();
+  busyTimer = setInterval(() => { ui.busyElapsed.textContent = `${Math.floor((Date.now() - started) / 1000)} s`; }, 1000);
+  return token;
+}
+function updateBusy(message) { if (!ui.busy.hidden) ui.busyLabel.textContent = message; }
+function hideBusy(token) {
+  if (token !== busyToken) return;
+  clearBusy();
+}
 function updateVideoModeLabel() {
   if (mediaKind === 'video') ui.kind.textContent = ui.fastMode.checked ? 'VIDÉO · MODE RAPIDE' : 'VIDÉO · MODE MINUTIEUX';
 }
@@ -94,6 +118,9 @@ async function loadDetector() {
 }
 
 function resetMedia() {
+  busyToken++;
+  clearBusy();
+  ui.fastPhoto.disabled = false;
   faceMemory.reset();
   ui.video.pause();
   ui.video.removeAttribute('src');
@@ -133,6 +160,7 @@ async function chooseFile(nextFile) {
   if (!kind) { setStatus('Choisissez une photo ou une vidéo.'); return; }
   const currentSelection = ++selectionId;
   ui.fastMode.checked = fastModeChoice;
+  ui.fastPhoto.checked = fastPhotoChoice;
   resetMedia();
   file = nextFile;
   mediaKind = kind;
@@ -142,16 +170,22 @@ async function chooseFile(nextFile) {
   ui.drop.hidden = true;
   ui.canvasWrap.hidden = false;
   setStatus('Ouverture du fichier…');
+  const loadingToken = showBusy('Ouverture du fichier…');
+  const photoStartedAt = performance.now();
+  let photoDecodedAt;
+  let photoLoadedAt;
   try {
     if (kind === 'image') {
       const decoded = await createImageBitmap(nextFile, { imageOrientation: 'from-image' });
       if (currentSelection !== selectionId) { decoded.close?.(); return; }
       image = decoded;
+      photoDecodedAt = performance.now();
       const size = photoOutputSize(image.width, image.height, compactDevice);
       ui.canvas.width = size.width;
       ui.canvas.height = size.height;
       paintCover({ x: 0, y: 0, width: size.width, height: size.height });
       setStatus('Recherche des visages sur la photo…');
+      updateBusy('Recherche des visages sur la photo…');
       await new Promise((resolve) => requestAnimationFrame(resolve));
     } else {
       fileUrl = URL.createObjectURL(nextFile);
@@ -165,21 +199,16 @@ async function chooseFile(nextFile) {
       await seekSource(0.001);
     }
     updateOverlaySize();
-    if (!centerFace.session) await loadDetector();
+    if (!centerFace.session) {
+      if (kind === 'image') updateBusy('Préparation de la recherche des visages…');
+      await loadDetector();
+    }
     if (currentSelection !== selectionId) return;
+    if (kind === 'image') photoLoadedAt = performance.now();
     if (kind === 'video') {
       await processVideo();
     } else {
-      setStatus('Recherche des visages sur la photo…');
-      const detected = await centerFace.detect(image, 1280);
-      if (currentSelection !== selectionId) return;
-      photoDetections = detected;
-      const rendered = await renderCurrent();
-      ui.download.disabled = !rendered;
-      if (rendered) {
-        const resized = ui.canvas.width !== image.width || ui.canvas.height !== image.height;
-        setStatus(`Vérifiez la photo. Ajoutez un rectangle si un visage est encore visible.${resized ? ` Photo réduite à ${ui.canvas.width} × ${ui.canvas.height} pixels.` : ''}`);
-      }
+      await scanPhoto(currentSelection, { started: photoStartedAt, decoded: photoDecodedAt, loaded: photoLoadedAt });
     }
   } catch (error) {
     if (currentSelection !== selectionId) return;
@@ -187,6 +216,46 @@ async function chooseFile(nextFile) {
       paintCover({ x: 0, y: 0, width: ui.canvas.width, height: ui.canvas.height });
       setStatus('La photo n’a pas pu être traitée. Elle reste entièrement couverte. Rechargez la page et réessayez.');
     } else setStatus(error.message || 'Impossible d’ouvrir ce fichier.');
+  } finally { hideBusy(loadingToken); }
+}
+
+async function scanPhoto(currentSelection, timings) {
+  if (mediaKind !== 'image' || !image || !centerFace.session) return;
+  const fast = fastPhotoChoice;
+  const scanningToken = showBusy(fast ? 'Recherche rapide des visages…' : 'Recherche des visages sur la photo…');
+  setStatus(fast ? 'Recherche rapide des visages…' : 'Recherche des visages sur la photo…');
+  ui.fastPhoto.checked = fast;
+  ui.fastPhoto.disabled = true;
+  ui.download.disabled = true;
+  photoDetections = null;
+  paintCover({ x: 0, y: 0, width: ui.canvas.width, height: ui.canvas.height });
+  const scanStartedAt = performance.now();
+  try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (currentSelection !== selectionId) return;
+    const detected = await centerFace.detect(image, photoScanMaxSide(fast));
+    if (currentSelection !== selectionId) return;
+    const scanFinishedAt = performance.now();
+    photoDetections = detected;
+    if (renderBusy) await new Promise((resolve) => renderIdleResolvers.push(resolve));
+    const rendered = await renderCurrent();
+    ui.download.disabled = !rendered;
+    if (rendered) {
+      const seconds = (from, to) => Math.round((to - from) / 1000);
+      const timing = timings
+        ? `Ouverture ${seconds(timings.started, timings.decoded)} s, préparation ${seconds(timings.decoded, timings.loaded)} s, recherche ${seconds(scanStartedAt, scanFinishedAt)} s.`
+        : `Recherche ${seconds(scanStartedAt, scanFinishedAt)} s.`;
+      const resized = ui.canvas.width !== image.width || ui.canvas.height !== image.height;
+      setStatus(`Photo prête (${fast ? 'recherche rapide' : 'recherche minutieuse'}). ${timing} Vérifiez tous les visages.${resized ? ` Photo réduite à ${ui.canvas.width} × ${ui.canvas.height} pixels.` : ''}`);
+    }
+  } catch (error) {
+    if (currentSelection !== selectionId) return;
+    console.error(error);
+    paintCover({ x: 0, y: 0, width: ui.canvas.width, height: ui.canvas.height });
+    setStatus('La recherche des visages a échoué. La photo reste entièrement couverte. Réessayez.');
+  } finally {
+    if (currentSelection === selectionId) ui.fastPhoto.disabled = false;
+    hideBusy(scanningToken);
   }
 }
 
@@ -384,6 +453,10 @@ ui.fastMode.addEventListener('change', async () => {
     await enterVideoEditor(true);
   }
 });
+ui.fastPhoto.addEventListener('change', () => {
+  fastPhotoChoice = ui.fastPhoto.checked;
+  if (mediaKind === 'image' && image && centerFace.session) scanPhoto(selectionId);
+});
 ui.padding.addEventListener('input', async () => {
   ui.paddingValue.textContent = `${ui.padding.value}%`;
   if (mediaKind === 'video') { await enterVideoEditor(); return; }
@@ -460,6 +533,8 @@ async function analyzeVideo(fast) {
     ui.progressBar.style.width = `${percent}%`;
     ui.progressText.textContent = `${percent}%`;
     setStatus(`${fast ? 'Mode rapide' : 'Mode minutieux'} · Recherche des visages : ${completedChecks} sur ${totalChecks}…`);
+    if (completedChecks === 1 || completedChecks % 10 === 0 || completedChecks === totalChecks)
+      updateBusy(`Recherche des visages : ${completedChecks} sur ${totalChecks}…`);
   };
   for (let index = 0; index < checks.length; index++) {
     const { time, maxSide, detail } = checks[index];
@@ -595,6 +670,7 @@ async function processVideo() {
   ui.fastMode.checked = fast;
   setVideoCanvasSize();
   updateVideoModeLabel();
+  const processingToken = showBusy('Recherche des visages dans la vidéo…');
   exporting = true;
   ui.download.disabled = true;
   ui.processVideo.disabled = true;
@@ -616,6 +692,7 @@ async function processVideo() {
     ui.progressBar.style.width = '70%';
     ui.progressText.textContent = '70%';
     setStatus('Création du fichier vidéo…');
+    updateBusy('Création du fichier vidéo…');
     const { blob, mime } = await recordProcessedVideo(fast);
     processedVideoBlob = blob;
     processedMime = mime;
@@ -637,6 +714,7 @@ async function processVideo() {
     ui.download.disabled = true;
     setStatus(`${error.message || 'La vidéo n’a pas pu être créée.'} Touchez « Refaire la vidéo » pour réessayer.`);
   } finally {
+    hideBusy(processingToken);
     exporting = false;
     ui.processVideo.disabled = false;
     ui.editVideo.disabled = false;
@@ -656,17 +734,22 @@ ui.download.addEventListener('click', async () => {
     return;
   }
   exporting = true;
+  const exportingToken = showBusy('Création de la photo…');
   ui.download.disabled = true;
+  ui.fastPhoto.disabled = true;
   ui.maskColor.disabled = true;
   setStatus('Création de la photo…');
   try { await exportPhoto(); }
   catch (error) { setStatus(error.message || 'La photo n’a pas pu être créée.'); }
   finally {
+    hideBusy(exportingToken);
     exporting = false;
     ui.download.disabled = false;
+    ui.fastPhoto.disabled = false;
     ui.maskColor.disabled = false;
   }
 });
 
 ui.fastMode.disabled = false;
+ui.fastPhoto.disabled = false;
 loadDetector().catch(() => {});

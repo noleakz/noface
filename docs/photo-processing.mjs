@@ -6,3 +6,5 @@ export function photoOutputSize(width, height, compactDevice) {
     height: Math.max(1, Math.round(height * scale))
   };
 }
+
+export function photoScanMaxSide(fast) { return fast ? 640 : 1280; }

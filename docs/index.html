@@ -7,7 +7,7 @@
   <meta name="description" content="Couvrez les visages sur vos photos et vidéos, directement sur votre appareil.">
   <title>NOFACE — anonymiser les visages sur votre appareil</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23161616'/%3E%3Cpath d='M9 18h46v9H9zm0 19h46v9H9z' fill='%23f4f2ec'/%3E%3Cpath d='M40 9h9v46h-9z' fill='%23c52922'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=photo-speed-1">
 </head>
 <body>
   <div class="app">
@@ -56,6 +56,11 @@
             <canvas id="canvas" aria-label="Aperçu du fichier anonymisé"></canvas>
             <div id="draw-overlay" aria-label="Dessiner un rectangle supplémentaire sur l’aperçu"></div>
             <video id="result-video" controls playsinline aria-label="Vidéo anonymisée prête à regarder" hidden></video>
+            <div class="busy-overlay" id="busy-overlay" role="status" aria-live="polite" hidden>
+              <span class="busy-spinner" aria-hidden="true"></span>
+              <strong id="busy-label">Préparation du fichier…</strong>
+              <span class="busy-elapsed" id="busy-elapsed" aria-hidden="true">0 s</span>
+            </div>
           </div>
           <div class="timeline" id="timeline" hidden>
             <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Position dans la vidéo">
@@ -70,6 +75,8 @@
           <div class="control-block">
             <span class="field-label">Recherche des visages</span>
             <p class="help">NOFACE cherche les visages automatiquement. Il peut en oublier : vérifiez toujours le résultat.</p>
+            <label class="toggle-field" for="fast-photo"><input id="fast-photo" type="checkbox" disabled><span>Recherche rapide pour les photos</span></label>
+            <p class="help">Plus rapide sur téléphone, mais peut oublier des visages petits ou éloignés. Vérifiez toute la photo avant de la partager.</p>
           </div>
           <div class="control-block">
             <label class="toggle-field" for="fast-mode"><input id="fast-mode" type="checkbox" disabled><span>Mode rapide pour les vidéos</span></label>
@@ -106,6 +113,6 @@
     </main>
   </div>
   <video id="source-video" playsinline preload="auto" hidden></video>
-  <script type="module" src="./app.js?v=photo-worker-1"></script>
+  <script type="module" src="./app.js?v=photo-speed-1"></script>
 </body>
 </html>
