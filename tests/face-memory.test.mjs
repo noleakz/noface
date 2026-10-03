@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FaceMemory } from '../dist/face-memory.mjs';
+import { FaceMemory } from '../docs/face-memory.mjs';
 
 const face = (x, y = 60) => ({ originX: x, originY: y, width: 40, height: 40 });
 const covers = (box, x, y) => box.originX <= x && box.originY <= y &&

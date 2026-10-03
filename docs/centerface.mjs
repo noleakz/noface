@@ -1,5 +1,7 @@
 // CenterFace's preprocessing and box decoding follow Star-Clouds/CenterFace
 // (MIT): https://github.com/Star-Clouds/CenterFace/blob/master/prj-python/centerface.py
+import { loadModelBytes } from './model-cache.mjs';
+
 const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
 // The upstream ONNX file declares a fixed 10x3x32x32 input. This copy changes
 // only the declared input shape so ONNX Runtime can accept real image sizes.
@@ -87,12 +89,16 @@ export class CenterFaceDetector {
         const ort = await import(`${ORT_BASE}ort.min.mjs`);
         ort.env.wasm.wasmPaths = ORT_BASE;
         ort.env.wasm.numThreads = 1;
-        const session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });
+        const modelBytes = await loadModelBytes(MODEL_URL);
+        const session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] });
         if (session.outputNames.length < 3 || !['537', '538', '539'].every((name) => session.outputNames.includes(name)))
           throw new Error('Version du modèle CenterFace non reconnue.');
         this.ort = ort;
         this.session = session;
-      })();
+      })().catch((error) => {
+        this.loadPromise = null;
+        throw error;
+      });
     }
     return this.loadPromise;
   }

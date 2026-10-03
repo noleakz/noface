@@ -32,6 +32,8 @@ h1, h2, p { margin: 0; }
   letter-spacing: -.04em;
 }
 .brand-mark { color: #c52922; font-size: 1.25rem; letter-spacing: -.15em; }
+.source-link { color: inherit; font-family: 'Courier New', monospace; font-size: .82rem; font-weight: 700; text-decoration-thickness: 2px; text-underline-offset: 4px; white-space: nowrap; }
+.source-link:hover, .source-link:focus-visible { color: #a5201b; }
 .topbar-note, .eyebrow, .file-kind, .privacy-stamp, .review-note strong {
   font-family: 'Courier New', monospace;
   font-weight: 700;
@@ -105,6 +107,7 @@ h1, h2, p { margin: 0; }
   letter-spacing: .035em;
 }
 .button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 3px 3px 0 #161616; }
+[hidden] { display: none !important; }
 .primary { background: #c52922; color: #fffdfa; }
 .primary:hover:not(:disabled) { background: #a5201b; }
 .secondary { background: #fffdfa; color: #161616; }
@@ -112,6 +115,7 @@ h1, h2, p { margin: 0; }
 #file-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .canvas-wrap { position: relative; min-height: 360px; max-height: 70vh; flex: 1; display: flex; justify-content: center; align-items: center; background: #101010; overflow: hidden; }
 canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; }
+#result-video { display: block; max-width: 100%; max-height: 70vh; }
 #draw-overlay { position: absolute; cursor: crosshair; touch-action: none; }
 .timeline { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-top: 2px solid #161616; }
 .timeline input { flex: 1; min-width: 0; }
@@ -150,7 +154,7 @@ canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain;
 }
 @media (max-width: 620px) {
   .topbar { min-height: 62px; }
-  .topbar-note { display: none; }
+  .source-link { font-size: .74rem; }
   .workspace { padding-top: 23px; padding-left: 14px; padding-right: 14px; }
   .intro { margin-bottom: 18px; }
   .intro > p:last-child { font-size: 1rem; }
@@ -169,13 +173,12 @@ canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain;
   .drop-inner h2 { font-size: 1.2rem; }
   .drop-inner .button { margin-top: 17px; }
   .canvas-wrap { min-height: 220px; max-height: 58svh; }
-  canvas { max-height: 58svh; }
+  canvas, #result-video { max-height: 58svh; }
   .stage-toolbar, .stage-footer, .timeline { padding-left: 12px; padding-right: 12px; }
   .stage-toolbar { min-height: 48px; }
   .file-kind { display: none; }
-  .timeline { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 6px 10px; }
-  .icon-button { width: 44px; height: 44px; grid-row: span 2; }
-  #time-display { grid-column: 2; min-width: 0; font-size: .75rem; }
+  .timeline { gap: 8px; }
+  #time-display { min-width: 0; font-size: .75rem; }
   .stage-footer { flex-wrap: wrap; overflow-wrap: anywhere; }
   .controls { gap: 19px; padding: 17px; }
   .control-block { padding-top: 16px; }
@@ -193,5 +196,5 @@ canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain;
 }
 @media (max-width: 620px) and (max-height: 500px) {
   .canvas-wrap { min-height: 150px; max-height: 70svh; }
-  canvas { max-height: 70svh; }
+  canvas, #result-video { max-height: 70svh; }
 }

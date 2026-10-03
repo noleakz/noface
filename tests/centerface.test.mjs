@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeCenterFace, rgbPlanesFromRgba } from '../dist/centerface.mjs';
+import { decodeCenterFace, rgbPlanesFromRgba } from '../docs/centerface.mjs';
 
 function tensors(width = 32, height = 32) {
   const plane = width * height / 16;
