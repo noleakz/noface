@@ -7,7 +7,7 @@
   <meta name="description" content="Couvrez les visages sur vos photos et vidéos, directement sur votre appareil.">
   <title>NOFACE — anonymiser les visages sur votre appareil</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23161616'/%3E%3Cpath d='M9 18h46v9H9zm0 19h46v9H9z' fill='%23f4f2ec'/%3E%3Cpath d='M40 9h9v46h-9z' fill='%23c52922'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=photo-speed-1">
+  <link rel="stylesheet" href="./styles.css?v=actions-above-1">
 </head>
 <body>
   <div class="app">
@@ -70,6 +70,13 @@
           <div class="progress-track" id="progress-track" hidden><div id="progress-bar"></div></div>
         </div>
 
+        <div class="control-actions" role="group" aria-label="Actions pour le fichier">
+          <button class="button secondary wide" id="edit-video" type="button" hidden>CORRIGER LA VIDÉO</button>
+          <button class="button primary wide" id="process-video" type="button" hidden>REFAIRE LA VIDÉO</button>
+          <button class="button primary wide" id="download" type="button" disabled>TÉLÉCHARGER LE RÉSULTAT</button>
+          <label class="button secondary wide" for="file-input">CHOISIR UN AUTRE FICHIER</label>
+        </div>
+
         <aside class="controls" aria-label="Réglages de l’anonymisation">
           <div class="control-header"><div><h2>Réglages</h2></div></div>
           <div class="control-block">
@@ -99,12 +106,6 @@
             <div class="field-row"><span class="field-label">Zones ajoutées à la main</span><span id="mask-count">0 zone</span></div>
             <p class="help">Si un visage a été oublié, dessinez un rectangle dessus. Pour une vidéo, utilisez « Corriger la vidéo » une fois le résultat prêt. Le rectangle restera au même endroit pendant toute la vidéo.</p>
             <div id="mask-list" class="mask-list"></div>
-          </div>
-          <div class="control-actions">
-            <button class="button secondary wide" id="edit-video" type="button" hidden>CORRIGER LA VIDÉO</button>
-            <button class="button primary wide" id="process-video" type="button" hidden>REFAIRE LA VIDÉO</button>
-            <button class="button primary wide" id="download" type="button" disabled>TÉLÉCHARGER LE RÉSULTAT</button>
-            <label class="button secondary wide" for="file-input">CHOISIR UN AUTRE FICHIER</label>
           </div>
         </aside>
       </section>

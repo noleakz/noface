@@ -78,8 +78,8 @@ h1, h2, p { margin: 0; }
 .network-detail summary { cursor: pointer; font-weight: 700; }
 .network-detail p { margin-top: 7px; }
 
-.editor { display: grid; grid-template-columns: minmax(0, 1fr) 335px; border: 3px solid #161616; background: #fffdfa; }
-.stage-panel { min-width: 0; display: flex; flex-direction: column; }
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 335px; grid-template-areas: "stage controls" "actions controls"; grid-template-rows: 1fr auto; border: 3px solid #161616; background: #fffdfa; }
+.stage-panel { grid-area: stage; min-width: 0; display: flex; flex-direction: column; }
 .stage-toolbar, .stage-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 18px; }
 .stage-toolbar { min-height: 56px; border-bottom: 2px solid #161616; }
 .stage-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
@@ -131,7 +131,7 @@ canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain;
 .progress-track { height: 5px; background: #d6d0c7; }
 .progress-track > div { width: 0; height: 100%; background: #c52922; }
 
-.controls { display: flex; flex-direction: column; gap: 23px; padding: 25px; border-left: 3px solid #161616; }
+.controls { grid-area: controls; display: flex; flex-direction: column; gap: 23px; padding: 25px; border-left: 3px solid #161616; }
 .control-header h2 { text-transform: uppercase; font-size: 1.5rem; line-height: 1.12; }
 .control-block { border-top: 2px solid #161616; padding-top: 20px; }
 .field-label { display: block; margin-bottom: 11px; font-size: .91rem; font-weight: 700; }
@@ -149,15 +149,14 @@ canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain;
 .controls input[type=range], .timeline input[type=range] { width: 100%; accent-color: #c52922; }
 .mask-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .mask-chip { padding: 7px 9px; border: 2px solid #161616; background: #eee9e0; font-size: .8rem; }
-.control-actions { display: grid; gap: 10px; margin-top: auto; }
+.control-actions { grid-area: actions; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 10px; padding: 16px 18px; border-top: 2px solid #161616; }
 .wide { width: 100%; }
 .review-note { max-width: 1050px; margin: 23px 0 0; padding-left: 16px; border-left: 5px solid #c52922; line-height: 1.5; font-size: .88rem; }
 
 @media (max-width: 930px) {
-  .editor { grid-template-columns: 1fr; }
+  .editor { grid-template-columns: 1fr; grid-template-areas: "stage" "actions" "controls"; grid-template-rows: auto; }
   .controls { border-left: 0; border-top: 3px solid #161616; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .control-header, .control-actions { grid-column: 1 / -1; }
-  .control-actions { grid-template-columns: 1fr 1fr; }
+  .control-header { grid-column: 1 / -1; }
   .drop-zone { min-height: 350px; }
 }
 @media (max-width: 620px) {
@@ -174,7 +173,7 @@ canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain;
   .network-detail { font-size: .84rem; }
   .editor { border-width: 2px; }
   .controls { display: flex; padding: 20px; }
-  .control-actions { display: grid; }
+  .control-actions { grid-template-columns: 1fr; padding: 14px 12px; }
   .drop-zone { min-height: 270px; padding: 13px; }
   .drop-inner { padding: 21px 12px; }
   .drop-icon { font-size: 1.9rem; margin-bottom: 9px; }
