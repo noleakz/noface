@@ -96,6 +96,7 @@ export class CenterFaceDetector {
         const ort = await import(`${ORT_BASE}ort.wasm.min.mjs`);
         ort.env.wasm.wasmPaths = ORT_BASE;
         ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = typeof Worker !== 'undefined';
         const modelBytes = await loadModelBytes(MODEL_URL);
         const session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] });
         if (session.outputNames.length < 3 || !['537', '538', '539'].every((name) => session.outputNames.includes(name)))

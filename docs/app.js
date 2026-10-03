@@ -1,8 +1,9 @@
 import { FaceMemory } from './face-memory.mjs';
-import { CenterFaceDetector } from './centerface.mjs';
+import { CenterFaceDetector } from './centerface.mjs?v=photo-worker-1';
 import { coverageAt, scaleBox, scanChecks, videoOutputSize, videoScanPlan } from './video-coverage.mjs';
 import { detectWithFallback } from './video-detection.mjs';
 import { defaultFastMode } from './video-mode.mjs';
+import { photoOutputSize } from './photo-processing.mjs';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -19,13 +20,14 @@ const ui = {
 const ctx = ui.canvas.getContext('2d', { willReadFrequently: false });
 const sourceCanvas = document.createElement('canvas');
 const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: false });
-ui.fastMode.checked = defaultFastMode({
+const compactDevice = defaultFastMode({
   viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
   screenWidth: window.screen?.width ?? window.innerWidth,
   screenHeight: window.screen?.height ?? window.innerHeight,
   touchPoints: navigator.maxTouchPoints ?? 0,
   coarsePointer: window.matchMedia?.('(any-pointer: coarse)')?.matches ?? false
 });
+ui.fastMode.checked = compactDevice;
 let fastModeChoice = ui.fastMode.checked;
 let detectorPromise;
 const faceMemory = new FaceMemory();
@@ -33,6 +35,8 @@ const centerFace = new CenterFaceDetector();
 let file;
 let fileUrl;
 let image;
+let photoDetections = null;
+let selectionId = 0;
 let mediaKind;
 let masks = [];
 let videoAnalysis = [];
@@ -83,7 +87,7 @@ async function loadDetector() {
   })().catch((error) => {
     detectorPromise = null;
     console.error(error);
-    setStatus('NOFACE ne peut pas démarrer. Vérifiez votre connexion, puis rechargez la page.');
+    setStatus('NOFACE n’a pas pu lancer la recherche des visages. Rechargez la page et réessayez.');
     throw error;
   });
   return detectorPromise;
@@ -107,6 +111,7 @@ function resetMedia() {
   analysisComplete = false;
   if (image?.close) image.close();
   image = null;
+  photoDetections = null;
   masks = [];
   renderMaskList();
   ui.download.disabled = true;
@@ -126,6 +131,7 @@ async function chooseFile(nextFile) {
   if (!nextFile || exporting) return;
   const kind = nextFile.type.startsWith('image/') ? 'image' : nextFile.type.startsWith('video/') ? 'video' : null;
   if (!kind) { setStatus('Choisissez une photo ou une vidéo.'); return; }
+  const currentSelection = ++selectionId;
   ui.fastMode.checked = fastModeChoice;
   resetMedia();
   file = nextFile;
@@ -138,8 +144,15 @@ async function chooseFile(nextFile) {
   setStatus('Ouverture du fichier…');
   try {
     if (kind === 'image') {
-      image = await createImageBitmap(nextFile, { imageOrientation: 'from-image' });
-      setCanvasSize(image.width, image.height);
+      const decoded = await createImageBitmap(nextFile, { imageOrientation: 'from-image' });
+      if (currentSelection !== selectionId) { decoded.close?.(); return; }
+      image = decoded;
+      const size = photoOutputSize(image.width, image.height, compactDevice);
+      ui.canvas.width = size.width;
+      ui.canvas.height = size.height;
+      paintCover({ x: 0, y: 0, width: size.width, height: size.height });
+      setStatus('Recherche des visages sur la photo…');
+      await new Promise((resolve) => requestAnimationFrame(resolve));
     } else {
       fileUrl = URL.createObjectURL(nextFile);
       ui.video.src = fileUrl;
@@ -153,15 +166,27 @@ async function chooseFile(nextFile) {
     }
     updateOverlaySize();
     if (!centerFace.session) await loadDetector();
+    if (currentSelection !== selectionId) return;
     if (kind === 'video') {
       await processVideo();
     } else {
+      setStatus('Recherche des visages sur la photo…');
+      const detected = await centerFace.detect(image, 1280);
+      if (currentSelection !== selectionId) return;
+      photoDetections = detected;
       const rendered = await renderCurrent();
       ui.download.disabled = !rendered;
-      if (rendered) setStatus('Vérifiez la photo. Ajoutez un rectangle si un visage est encore visible.');
+      if (rendered) {
+        const resized = ui.canvas.width !== image.width || ui.canvas.height !== image.height;
+        setStatus(`Vérifiez la photo. Ajoutez un rectangle si un visage est encore visible.${resized ? ` Photo réduite à ${ui.canvas.width} × ${ui.canvas.height} pixels.` : ''}`);
+      }
     }
   } catch (error) {
-    setStatus(error.message || 'Impossible d’ouvrir ce fichier.');
+    if (currentSelection !== selectionId) return;
+    if (kind === 'image') {
+      paintCover({ x: 0, y: 0, width: ui.canvas.width, height: ui.canvas.height });
+      setStatus('La photo n’a pas pu être traitée. Elle reste entièrement couverte. Rechargez la page et réessayez.');
+    } else setStatus(error.message || 'Impossible d’ouvrir ce fichier.');
   }
 }
 
@@ -242,10 +267,15 @@ async function renderCurrent() {
       updateTime();
       return true;
     }
-    sourceCtx.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
-    const detectedBoxes = await centerFace.detect(sourceCanvas, 1280);
-    ctx.drawImage(sourceCanvas, 0, 0);
-    for (const box of detectedBoxes) paintCover(paddedBox(box));
+    if (photoDetections === null) {
+      paintCover({ x: 0, y: 0, width: ui.canvas.width, height: ui.canvas.height });
+      return false;
+    }
+    ctx.drawImage(image, 0, 0, ui.canvas.width, ui.canvas.height);
+    for (const box of photoDetections) {
+      const scaled = scaleBox(box, image.width, image.height, ui.canvas.width, ui.canvas.height);
+      paintCover(paddedBox(scaled));
+    }
     paintManualMasks();
     return true;
   } catch (error) {
